@@ -372,6 +372,17 @@ def test_edit_release_failure_and_resume(config: Config, source_dir: Path) -> No
         ]
     """
 
+    # An edit that lacks one of the release's tracks fails before any tag is written.
+    partial_toml = correct_toml[: correct_toml.index(f"[tracks.{track_ids[1]}]")]
+    with pytest.raises(ReleaseEditFailedError):
+        upsert_release_metadata(config, release_id, partial_toml)
+    release = get_release(config, release_id)
+    assert release is not None
+    assert [t.tracktitle for t in get_tracks_of_release(config, release)] == ["Track 1", "Track 2"]
+    assert AudioTags.from_file(release_path / "01.m4a").releasetitle == "I Love Blackpink"
+
+    # Reattempt the first failed edit.
+    resume_file.write_text(bad_toml)
     assert serialize_release_metadata(config, release_id, resume_file=resume_file) == bad_toml
     upsert_release_metadata(config, release_id, correct_toml, resume_file=resume_file)
 
