@@ -62,6 +62,9 @@ them out of the cache, and logs a warning that names the ignored path and the pa
 Music never deletes or modifies the ignored files. To resolve a warning, remove the unwanted copy
 from the source directory.
 
+Commands that take a release path fail when given the path of an ignored release directory, instead
+of acting on the directory that kept the release ID.
+
 # Cache Resets
 
 When Music detects that:
