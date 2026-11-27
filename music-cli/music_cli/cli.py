@@ -307,7 +307,7 @@ def reflush(ctx: Context, release: str | None, rename: bool | None) -> None:
     and files per the source path templates. Accepts a release's UUID/path. If no release is
     specified, all releases are reflushed.
     """
-    release_ids = [parse_release_argument(release)] if release else None
+    release_ids = [parse_release_argument(release)] if release is not None else None
     reflush_releases(ctx.config, release_ids, rename=rename)
 
 
