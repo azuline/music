@@ -124,6 +124,7 @@ descriptors: list[str]
 labels: list[str]
 catalognumber: str | None
 edition: str | None                  # The title of this edition of the release.
+media: str | None                    # The media of this release, e.g. CD, Vinyl, Digital Media.
 releaseartists: ArtistMapping        # All release artists: an object with 7 properties, each corresponding to one role.
 releaseartists.main: list[Artist]    # The Artist object has a `name` property with the artist name.
 releaseartists.guest: list[Artist]
@@ -175,6 +176,7 @@ descriptors: list[str]
 labels: list[str]
 catalognumber: str | None
 edition: str | None                  # The title of this edition of the release.
+media: str | None                    # The media of this release, e.g. CD, Vinyl, Digital Media.
 releaseartists: ArtistMapping        # All release artists: an object with 7 properties, each corresponding to one role.
 releaseartists.main: list[Artist]    # The Artist object has a `name` property with the artist name.
 releaseartists.guest: list[Artist]

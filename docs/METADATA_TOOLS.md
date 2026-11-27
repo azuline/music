@@ -46,6 +46,7 @@ artists = [
 ]
 edition = ""
 catalognumber = "WMED0709"
+media = "CD"
 labels = [
     "BlockBerryCreative",
 ]
@@ -347,6 +348,7 @@ The rules engine supports matching and acting on the following tags:
 - `label`
 - `catalognumber`
 - `edition`
+- `media`
 - `new`
 - `favorite`
 - `rating`
