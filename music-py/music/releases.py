@@ -415,6 +415,10 @@ def upsert_release_metadata(
     *,
     # If provided, this resume file is deleted once the edit is successfully applied.
     resume_file: Path | None = None,
+    # The TOML that the edit started from (see `serialize_release_metadata`). If provided, the edit
+    # fails when the release no longer serializes to it, instead of undoing the changes that were
+    # made to the release while it was being edited.
+    original_toml: str | None = None,
 ) -> None:
     """
     Apply an edited metadata TOML string (see `serialize_release_metadata`) to a release. On
@@ -435,6 +439,10 @@ def upsert_release_metadata(
         tracks = get_tracks_of_release(c, release)
 
         try:
+            if original_toml is not None:
+                audiotags = [AudioTags.from_file(t.source_path) for t in tracks]
+                if MetadataRelease.from_audiotags(release, tracks, audiotags).serialize() != original_toml:
+                    raise ReleaseEditFailedError("The release was modified while it was being edited.")
             try:
                 release_meta = MetadataRelease.from_toml(toml)
             except (tomllib.TOMLDecodeError, KeyError) as e:

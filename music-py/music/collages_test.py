@@ -1,8 +1,11 @@
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from music.cache import connect, update_cache
 from music.collages import (
+    CollageModifiedDuringEditError,
     add_release_to_collage,
     create_collage,
     delete_collage,
@@ -114,6 +117,18 @@ def test_edit_collages_ordering(config: Config, source_dir: Path) -> None:
         data = tomllib.load(fp)
     assert data["releases"][0]["uuid"] == "ilovenewjeans"
     assert data["releases"][1]["uuid"] == "ilovecarly"
+
+
+def test_edit_collages_modified_during_edit(config: Config, source_dir: Path) -> None:
+    filepath = source_dir / "!collages" / "Rose Gold.toml"
+    original = serialize_collage(config, "Rose Gold")
+    # A release is removed from the collage while the edit is in progress.
+    remove_release_from_collage(config, "Rose Gold", "ilovecarly")
+    with pytest.raises(CollageModifiedDuringEditError):
+        upsert_collage(config, "Rose Gold", original.split("\n")[1], original_descriptions=original)
+    with filepath.open("rb") as fp:
+        data = tomllib.load(fp)
+    assert [r["uuid"] for r in data["releases"]] == ["ilovenewjeans"]
 
 
 def test_edit_collages_remove_release(config: Config, source_dir: Path) -> None:

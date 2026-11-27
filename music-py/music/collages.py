@@ -28,6 +28,10 @@ class DescriptionMismatchError(MusicExpectedError):
     pass
 
 
+class CollageModifiedDuringEditError(MusicExpectedError):
+    pass
+
+
 class CollageDoesNotExistError(MusicExpectedError):
     pass
 
@@ -148,7 +152,16 @@ def serialize_collage(c: Config, collage_name: str) -> str:
     return "\n".join([r["description_meta"] for r in raw_releases])
 
 
-def upsert_collage(c: Config, collage_name: str, edited_descriptions: str) -> None:
+def upsert_collage(
+    c: Config,
+    collage_name: str,
+    edited_descriptions: str,
+    *,
+    # The descriptions that the edit started from (see `serialize_collage`). If provided, the edit
+    # fails when the collage no longer serializes to them, instead of undoing the changes that were
+    # made to the collage while it was being edited.
+    original_descriptions: str | None = None,
+) -> None:
     """
     Apply an edited newline-delimited string of release descriptions (see `serialize_collage`) to a
     collage, reordering/removing releases to match.
@@ -160,6 +173,12 @@ def upsert_collage(c: Config, collage_name: str, edited_descriptions: str) -> No
         with path.open("rb") as fp:
             data = tomllib.load(fp)
         raw_releases = data.get("releases", [])
+        if original_descriptions is not None and original_descriptions != "\n".join([
+            r["description_meta"] for r in raw_releases
+        ]):
+            raise CollageModifiedDuringEditError(
+                f"Collage {collage_name} was modified while it was being edited. Please redo the edit."
+            )
         uuid_mapping = {r["description_meta"]: r["uuid"] for r in raw_releases}
 
         edited_releases: list[dict[str, Any]] = []
