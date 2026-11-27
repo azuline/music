@@ -202,6 +202,41 @@ def test_extract_release_cover_art(config: Config) -> None:
     assert (release_dir / "cover.png").read_bytes() == PNG
 
 
+def test_extract_release_cover_art_does_not_write_through_symlink(
+    config: Config, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    release_dir = _copy_release_without_arts(config, TEST_RELEASE_1)
+    embed_art(release_dir / "01.m4a", PNG)
+    outside = tmp_path / "outside.png"
+    (release_dir / "cover.png").symlink_to(outside)
+    update_cache(config)
+
+    # A dangling symlink at the cover art's path is neither followed nor replaced.
+    extract_release_cover_art(config, _release_id(config))
+    assert "Skipped extracting" in caplog.text
+    assert not outside.exists()
+    assert (release_dir / "cover.png").is_symlink()
+    assert read_embedded_arts(release_dir / "01.m4a") == [PNG]
+
+
+def test_extract_release_cover_art_unwritable_track(config: Config, caplog: pytest.LogCaptureFixture) -> None:
+    release_dir = _copy_release_without_arts(config, TEST_RELEASE_1)
+    embed_art(release_dir / "01.m4a", PNG)
+    embed_art(release_dir / "02.m4a", PNG)
+    update_cache(config)
+    release_id = _release_id(config)
+    (release_dir / "01.m4a").chmod(0o444)
+
+    # A track that cannot be written is skipped; the rest of the release is still processed.
+    extract_release_cover_art(config, release_id)
+    assert "Failed to remove the embedded cover art" in caplog.text
+    assert read_embedded_arts(release_dir / "01.m4a") == [PNG]
+    assert read_embedded_arts(release_dir / "02.m4a") == []
+    release = get_release(config, release_id)
+    assert release is not None
+    assert release.cover_image_path == release_dir / "cover.png"
+
+
 def test_extract_release_cover_art_external_cover(config: Config, caplog: pytest.LogCaptureFixture) -> None:
     # The cache finds cover arts in the release's subdirectories too, so they count as external covers.
     release_dir = _copy_release_without_arts(config, TEST_RELEASE_1)

@@ -584,7 +584,10 @@ def remove_embedded_arts(p: Path, arts: list[bytes]) -> bool:
             del m.tags["covr"]
     else:
         raise UnsupportedFiletypeError(f"{p} is not a supported audio file")
-    m.save()
+    try:
+        m.save()
+    except mutagen.MutagenError as e:
+        raise OSError(f"Failed to write file: {e}") from e
     return True
 
 

@@ -251,6 +251,10 @@ For each release:
   logged. Neither the track nor the external cover art is modified.
 - If the release has multiple external cover arts that differ from each other, the release is
   skipped with a warning.
+- A track whose tags cannot be written is skipped with a warning, and the rest of the release is
+  still processed.
+- The cover art file is never written through a symbolic link: if `cover.{ext}` already exists as a
+  broken symbolic link, the release is skipped with a warning.
 
 Cover art files in the release's subdirectories count as external cover arts, as they do for the
 cache.

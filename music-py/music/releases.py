@@ -309,8 +309,17 @@ def extract_release_cover_art(c: Config, release_id: str, *, dry_run: bool = Fal
                 return
             cover, cover_name = extractable[0]
             if not dry_run:
-                with (release.source_path / cover_name).open("wb") as fp:
-                    fp.write(cover)
+                # Exclusive creation never follows a symlink. A dangling symlink is not a cover art
+                # to the scan above, and writing through it would create a file outside the release.
+                try:
+                    with (release.source_path / cover_name).open("xb") as fp:
+                        fp.write(cover)
+                except FileExistsError:
+                    logger.warning(
+                        f"Skipped extracting the embedded cover arts of release {release_logtext}: "
+                        f"{cover_name} already exists and is not a readable cover art file"
+                    )
+                    return
             logger.info(f"{prefix}Extracted the embedded cover art of release {release_logtext} to {cover_name}")
             externals = {cover}
 
@@ -323,7 +332,11 @@ def extract_release_cover_art(c: Config, release_id: str, *, dry_run: bool = Fal
                 )
                 continue
             if not dry_run:
-                remove_embedded_arts(path, [arts[0]])
+                try:
+                    remove_embedded_arts(path, [arts[0]])
+                except (MusicExpectedError, OSError) as e:
+                    logger.warning(f"Failed to remove the embedded cover art of {path}: {e}")
+                    continue
             logger.info(f"{prefix}Removed the embedded cover art from {path.name} in release {release_logtext}")
 
     if not dry_run:
