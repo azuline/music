@@ -98,7 +98,9 @@ def test_flush(config: Config, isolated_dir: Path, filename: str, track_num: str
     assert af.releaseartists.main == [Artist("Artist A"), Artist("Artist B")]
 
     assert af.tracknumber == track_num
+    assert af.tracktotal == 5
     assert af.discnumber == "1"
+    assert af.disctotal == 1
 
     assert af.tracktitle == f"Track {track_num}"
     assert af.trackartists == ArtistMapping(
