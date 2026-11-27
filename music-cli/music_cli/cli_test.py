@@ -1,21 +1,24 @@
 import os
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
 import pytest
 from click.testing import CliRunner
-from music import AudioTags, Config
+from music import AudioTags, Config, get_release, update_cache
 from music_vfs.virtualfs_test import start_virtual_fs
 
 from music_cli.cli import (
     Context,
+    DuplicateReleaseArgError,
     InvalidReleaseArgError,
     InvalidTrackArgError,
     parse_collage_argument,
     parse_playlist_argument,
     parse_release_argument,
     parse_track_argument,
+    releases,
     unwatch,
     watch,
 )
@@ -46,6 +49,34 @@ def test_parse_release_from_path(config: Config) -> None:
                     / "01 - Track 1.m4a"
                 )
             )
+
+
+def test_parse_release_from_ignored_duplicate_path(config: Config, source_dir: Path) -> None:
+    """Test that the path of an ignored duplicate does not act on the release that kept the ID."""
+    retained = source_dir / "Test Release 1"
+    duplicate = source_dir / "Test Release 1 copy"
+    shutil.copytree(retained, duplicate)
+    update_cache(config)
+    release_id = parse_release_argument(str(retained), c=config)
+    release = get_release(config, release_id)
+    assert release is not None
+    assert release.source_path == retained
+
+    with pytest.raises(DuplicateReleaseArgError):
+        parse_release_argument(str(duplicate), c=config)
+    # Deleting by the duplicate's path fails and leaves both directories alone.
+    res = CliRunner().invoke(releases, ["delete", str(duplicate)], obj=Context(config=config))
+    assert isinstance(res.exception, DuplicateReleaseArgError)
+    assert retained.is_dir()
+    assert duplicate.is_dir()
+    assert get_release(config, release_id) == release
+
+    # The retained path and the release ID still work.
+    assert parse_release_argument(release_id, c=config) == release_id
+    res = CliRunner().invoke(releases, ["delete", str(retained)], obj=Context(config=config))
+    assert res.exit_code == 0
+    assert not retained.exists()
+    assert duplicate.is_dir()
 
 
 def test_parse_track_id_from_path(config: Config, source_dir: Path) -> None:

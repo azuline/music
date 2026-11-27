@@ -38,6 +38,7 @@ from music import (
     edit_release,
     execute_metadata_rule,
     execute_stored_metadata_rules,
+    get_release,
     maybe_invalidate_cache_database,
     remove_release_from_collage,
     remove_track_from_playlist,
@@ -83,6 +84,10 @@ class CliExpectedError(Exception):
 
 
 class InvalidReleaseArgError(CliExpectedError):
+    pass
+
+
+class DuplicateReleaseArgError(CliExpectedError):
     pass
 
 
@@ -227,7 +232,7 @@ def releases() -> None:
 @click.pass_obj
 def print_release(ctx: Context, release: str) -> None:
     """Print a single release (in JSON). Accepts a release's UUID/path."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     click.echo(dump_release(ctx.config, release))
 
 
@@ -246,7 +251,7 @@ def print_all_releases(ctx: Context, matcher: str | None) -> None:
 @click.pass_obj
 def edit_release_cmd(ctx: Context, release: str, resume: Path | None) -> None:
     """Edit a release's metadata in $EDITOR. Accepts a release's UUID/path."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     edit_release(ctx.config, release, resume_file=resume)
 
 
@@ -255,7 +260,7 @@ def edit_release_cmd(ctx: Context, release: str, resume: Path | None) -> None:
 @click.pass_obj
 def toggle_new(ctx: Context, release: str) -> None:
     """Toggle a release's "new"-ness. Accepts a release's UUID/path."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     toggle_release_new(ctx.config, release)
 
 
@@ -264,7 +269,7 @@ def toggle_new(ctx: Context, release: str) -> None:
 @click.pass_obj
 def toggle_favorite(ctx: Context, release: str) -> None:
     """Toggle a release's "favorite" status. Accepts a release's UUID/path."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     toggle_release_favorite(ctx.config, release)
 
 
@@ -275,7 +280,7 @@ def toggle_favorite(ctx: Context, release: str) -> None:
 @click.pass_obj
 def set_rating_cmd(ctx: Context, release: str, rating: int | None, clear: bool) -> None:
     """Set a release's rating (1-100) or clear it. Accepts a release's UUID/path."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     if clear:
         set_release_rating(ctx.config, release, None)
     elif rating is not None:
@@ -292,7 +297,7 @@ def delete_release_cmd(ctx: Context, release: str) -> None:
     Delete a release from the library. The release is moved to the trash bin, following the
     freedesktop spec. Accepts a release's UUID/path.
     """
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     delete_release(ctx.config, release)
 
 
@@ -302,7 +307,7 @@ def delete_release_cmd(ctx: Context, release: str) -> None:
 @click.pass_obj
 def set_cover_release(ctx: Context, release: str, cover: Path) -> None:
     """Set/replace the cover art of a release. Accepts a release's UUID/path."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     set_release_cover_art(ctx.config, release, cover)
 
 
@@ -311,7 +316,7 @@ def set_cover_release(ctx: Context, release: str, cover: Path) -> None:
 @click.pass_obj
 def delete_cover_release(ctx: Context, release: str) -> None:
     """Delete the cover art of a release."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     delete_release_cover_art(ctx.config, release)
 
 
@@ -323,7 +328,7 @@ def delete_cover_release(ctx: Context, release: str) -> None:
 @click.pass_obj
 def run_rule(ctx: Context, release: str, actions: list[str], dry_run: bool, yes: bool) -> None:
     """Run rule engine actions on all tracks in a release. Accepts a release's UUID/path."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     parsed_actions = [Action.parse(a) for a in actions]
     run_actions_on_release(
         ctx.config,
@@ -430,7 +435,7 @@ def delete(ctx: Context, collage: str) -> None:
 @click.pass_obj
 def add_release(ctx: Context, collage: str, release: str) -> None:
     """Add a release to a collage. Accepts a collage's name and a release's UUID/path."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     add_release_to_collage(ctx.config, collage, release)
 
 
@@ -440,7 +445,7 @@ def add_release(ctx: Context, collage: str, release: str) -> None:
 @click.pass_obj
 def remove_release(ctx: Context, collage: str, release: str) -> None:
     """Remove a release from a collage. Accepts a collage's name and a release's UUID/path."""
-    release = parse_release_argument(release)
+    release = parse_release_argument(release, c=ctx.config)
     remove_release_from_collage(ctx.config, collage, release)
 
 
@@ -679,8 +684,14 @@ def run_stored(ctx: Context, dry_run: bool, yes: bool) -> None:
     execute_stored_metadata_rules(ctx.config, dry_run=dry_run, confirm_yes=not yes)
 
 
-def parse_release_argument(r: str) -> str:
-    """Takes in a release argument and normalizes it to the release ID."""
+def parse_release_argument(r: str, *, c: Config | None = None) -> str:
+    """
+    Takes in a release argument and normalizes it to the release ID.
+
+    If a config is passed, a path in the source directory must be the path of the release in the
+    cache. When multiple directories have the same release ID, only one of them is the release, and
+    acting on the release by the path of an ignored one would affect a different directory.
+    """
     if valid_uuid(r):
         logger.debug(f"Treating release argument {r} as UUID")
         return r
@@ -691,6 +702,14 @@ def parse_release_argument(r: str) -> str:
         for f in sorted(p.iterdir()):
             if m := STORED_DATA_FILE_REGEX.match(f.name):
                 logger.debug(f"Parsed release ID {m[1]} from release argument {r}")
+                if c is not None and p.is_relative_to(c.music_source_dir.resolve()):
+                    release = get_release(c, m[1])
+                    if release is not None and release.source_path.resolve() != p:
+                        raise DuplicateReleaseArgError(
+                            f"{r} is an ignored duplicate of the release at {release.source_path}: "
+                            f"both have the release ID {m[1]}. Pass the other path, or remove one of "
+                            "the two directories from the source directory."
+                        )
                 return m[1]
     raise InvalidReleaseArgError(
         f"""\
