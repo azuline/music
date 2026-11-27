@@ -478,7 +478,7 @@ class AudioTags:
 
 def _with_previous_total(number: str | None, previous: str | None) -> str | None:
     """Carry the `/total` suffix of an ID3 track or disc number frame over to a new number."""
-    if not number or not previous or "/" not in previous:
+    if not number or "/" in number or not previous or "/" not in previous:
         return number
     return f"{number}/{previous.split('/', 1)[1]}"
 
