@@ -14,7 +14,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-import click
 import tomli_w
 from send2trash import send2trash
 
@@ -40,6 +39,8 @@ from music.common import Artist, ArtistMapping, MusicError, MusicExpectedError
 from music.config import Config
 from music.rule_parser import ALL_TAGS, Action, Matcher
 from music.rules import (
+    ChangesConfirmer,
+    ChangesPreviewer,
     execute_metadata_actions,
     fast_search_for_matching_releases,
     filter_release_false_positives_using_read_cache,
@@ -361,49 +362,81 @@ class MetadataRelease:
 FAILED_RELEASE_EDIT_FILENAME_REGEX = re.compile(r"failed-release-edit\.([^.]+)\.toml")
 
 
-def edit_release(
+def serialize_release_metadata(
     c: Config,
     release_id: str,
     *,
-    # Will use this file as the starting TOML instead of reading the cache.
+    # If provided, read the starting TOML from this file instead of the read cache.
     resume_file: Path | None = None,
-) -> None:
+) -> str:
+    """
+    Serialize a release's metadata into a TOML string suitable for editing. The frontend is
+    responsible for presenting the TOML to the user (e.g. in $EDITOR) and passing the edited TOML
+    to `upsert_release_metadata`.
+    """
     release = get_release(c, release_id)
     if not release:
         raise ReleaseDoesNotExistError(f"Release {release_id} does not exist")
 
+    if resume_file is not None:
+        m = FAILED_RELEASE_EDIT_FILENAME_REGEX.match(resume_file.name)
+        if not m:
+            raise InvalidReleaseEditResumeFileError(f"{resume_file.name} is not a valid release edit resume file")
+        resume_uuid = m[1]
+        if resume_uuid != release_id:
+            raise InvalidReleaseEditResumeFileError(f"{resume_file.name} is not associated with this release")
+        with resume_file.open("r") as fp:
+            return fp.read()
+
     # Trigger a quick cache update to ensure we are reading the liveliest data.
     update_cache_for_releases(c, [release.source_path])
     # Reload release in case any source paths changed.
+    release = get_release(c, release_id)
+    assert release is not None
+    tracks = get_tracks_of_release(c, release)
+    return MetadataRelease.from_cache(release, tracks).serialize()
+
+
+def upsert_release_metadata(
+    c: Config,
+    release_id: str,
+    toml: str,
+    *,
+    # If provided, this resume file is deleted once the edit is successfully applied.
+    resume_file: Path | None = None,
+    # The TOML that the edit started from (see `serialize_release_metadata`). If provided, the edit
+    # fails when the release no longer serializes to it, instead of undoing the changes that were
+    # made to the release while it was being edited.
+    original_toml: str | None = None,
+) -> None:
+    """
+    Apply an edited metadata TOML string (see `serialize_release_metadata`) to a release. On
+    failure, the submitted TOML is written to a resume file in the cache directory so that the edit
+    can be reattempted.
+    """
+    release = get_release(c, release_id)
+    if not release:
+        raise ReleaseDoesNotExistError(f"Release {release_id} does not exist")
+
+    # The TOML may have been serialized long ago (a resume file, or a non-interactive apply), so
+    # refresh the cache to pick up any track paths that changed since.
+    update_cache_for_releases(c, [release.source_path])
     release = get_release(c, release_id)
 
     with lock(c, release_lock_name(release_id)):
         assert release is not None
         tracks = get_tracks_of_release(c, release)
 
-        if resume_file is not None:
-            m = FAILED_RELEASE_EDIT_FILENAME_REGEX.match(resume_file.name)
-            if not m:
-                raise InvalidReleaseEditResumeFileError(f"{resume_file.name} is not a valid release edit resume file")
-            resume_uuid = m[1]
-            if resume_uuid != release_id:
-                raise InvalidReleaseEditResumeFileError(f"{resume_file.name} is not associated with this release")
-            with resume_file.open("r") as fp:
-                original_toml = fp.read()
-        else:
-            original_metadata = MetadataRelease.from_cache(release, tracks)
-            original_toml = original_metadata.serialize()
-
-        toml = click.edit(original_toml, extension=".toml") or original_toml
-        if original_toml == toml and not resume_file:
-            logger.info("Aborting manual release edit: no metadata change detected.")
-            return
-
         try:
+            if original_toml is not None and MetadataRelease.from_cache(release, tracks).serialize() != original_toml:
+                raise ReleaseEditFailedError("The release was modified while it was being edited.")
             try:
                 release_meta = MetadataRelease.from_toml(toml)
             except (tomllib.TOMLDecodeError, KeyError) as e:
                 raise ReleaseEditFailedError("Failed to decode TOML file.") from e
+            # Check every track up front so that a mismatched edit fails before any tag is written.
+            if missing := [t.id for t in tracks if t.id not in release_meta.tracks]:
+                raise ReleaseEditFailedError(f"Edit is missing tracks of this release: {', '.join(missing)}")
             for t in tracks:
                 track_meta = release_meta.tracks[t.id]
                 tags = AudioTags.from_file(t.source_path)
@@ -571,6 +604,8 @@ def run_actions_on_release(
     *,
     dry_run: bool = False,
     confirm_yes: bool = False,
+    preview: ChangesPreviewer | None = None,
+    confirm: ChangesConfirmer | None = None,
 ) -> None:
     """Run rule engine actions on a release."""
     release = get_release(c, release_id)
@@ -578,7 +613,9 @@ def run_actions_on_release(
         raise ReleaseDoesNotExistError(f"Release {release_id} does not exist")
     tracks = get_tracks_of_release(c, release)
     audiotags = [AudioTags.from_file(t.source_path) for t in tracks]
-    execute_metadata_actions(c, actions, audiotags, dry_run=dry_run, confirm_yes=confirm_yes)
+    execute_metadata_actions(
+        c, actions, audiotags, dry_run=dry_run, confirm_yes=confirm_yes, preview=preview, confirm=confirm
+    )
 
 
 def create_single_release(

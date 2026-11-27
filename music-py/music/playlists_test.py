@@ -1,20 +1,23 @@
 import shutil
 import tomllib
 from pathlib import Path
-from typing import Any
+
+import pytest
 
 from conftest import TEST_PLAYLIST_1, TEST_RELEASE_1
 from music.cache import connect, update_cache
 from music.config import Config
 from music.playlists import (
+    PlaylistModifiedDuringEditError,
     add_track_to_playlist,
     create_playlist,
     delete_playlist,
     delete_playlist_cover_art,
-    edit_playlist_in_editor,
     remove_track_from_playlist,
     rename_playlist,
+    serialize_playlist,
     set_playlist_cover_art,
+    upsert_playlist,
 )
 
 
@@ -111,10 +114,10 @@ def test_rename_playlist(config: Config, source_dir: Path) -> None:
         assert not cursor.fetchone()[0]
 
 
-def test_edit_playlists_ordering(monkeypatch: Any, config: Config, source_dir: Path) -> None:
+def test_edit_playlists_ordering(config: Config, source_dir: Path) -> None:
     filepath = source_dir / "!playlists" / "Lala Lisa.toml"
-    monkeypatch.setattr("music.playlists.click.edit", lambda x: "\n".join(reversed(x.split("\n"))))
-    edit_playlist_in_editor(config, "Lala Lisa")
+    original = serialize_playlist(config, "Lala Lisa")
+    upsert_playlist(config, "Lala Lisa", "\n".join(reversed(original.split("\n"))))
 
     with filepath.open("rb") as fp:
         data = tomllib.load(fp)
@@ -122,17 +125,30 @@ def test_edit_playlists_ordering(monkeypatch: Any, config: Config, source_dir: P
     assert data["tracks"][1]["uuid"] == "iloveloona"
 
 
-def test_edit_playlists_remove_track(monkeypatch: Any, config: Config, source_dir: Path) -> None:
+def test_edit_playlists_modified_during_edit(config: Config, source_dir: Path) -> None:
     filepath = source_dir / "!playlists" / "Lala Lisa.toml"
-    monkeypatch.setattr("music.playlists.click.edit", lambda x: x.split("\n")[0])
-    edit_playlist_in_editor(config, "Lala Lisa")
+    original = serialize_playlist(config, "Lala Lisa")
+    with filepath.open("rb") as fp:
+        tracks_before = tomllib.load(fp)["tracks"]
+    # A track is removed from the playlist while the edit is in progress.
+    remove_track_from_playlist(config, "Lala Lisa", tracks_before[0]["uuid"])
+    with pytest.raises(PlaylistModifiedDuringEditError):
+        upsert_playlist(config, "Lala Lisa", original.split("\n")[0], original_descriptions=original)
+    with filepath.open("rb") as fp:
+        assert tomllib.load(fp)["tracks"] == tracks_before[1:]
+
+
+def test_edit_playlists_remove_track(config: Config, source_dir: Path) -> None:
+    filepath = source_dir / "!playlists" / "Lala Lisa.toml"
+    original = serialize_playlist(config, "Lala Lisa")
+    upsert_playlist(config, "Lala Lisa", original.split("\n")[0])
 
     with filepath.open("rb") as fp:
         data = tomllib.load(fp)
     assert len(data["tracks"]) == 1
 
 
-def test_edit_playlists_duplicate_track_name(monkeypatch: Any, config: Config) -> None:
+def test_edit_playlists_duplicate_track_name(config: Config) -> None:
     """
     When there are duplicate virtual filenames, we append UUID. Check that it works by asserting on
     the seen text and checking that reversing the order works.
@@ -152,15 +168,8 @@ def test_edit_playlists_duplicate_track_name(monkeypatch: Any, config: Config) -
     for tid in track_ids:
         add_track_to_playlist(config, "You & Me", tid)
 
-    seen = ""
-
-    def editfn(x: str) -> str:
-        nonlocal seen
-        seen = x
-        return "\n".join(reversed(x.split("\n")))
-
-    monkeypatch.setattr("music.playlists.click.edit", editfn)
-    edit_playlist_in_editor(config, "You & Me")
+    seen = serialize_playlist(config, "You & Me")
+    upsert_playlist(config, "You & Me", "\n".join(reversed(seen.split("\n"))))
 
     assert seen == "\n".join([f"[1990-02-05] BLACKPINK - Track 1 [{tid}]" for tid in track_ids])
 

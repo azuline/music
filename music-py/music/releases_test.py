@@ -2,7 +2,6 @@ import re
 import shutil
 import tomllib
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -23,12 +22,14 @@ from music.releases import (
     create_single_release,
     delete_release,
     delete_release_cover_art,
-    edit_release,
     find_releases_matching_rule,
     run_actions_on_release,
+    serialize_release_metadata,
     set_release_cover_art,
+    set_release_rating,
     toggle_release_favorite,
     toggle_release_new,
+    upsert_release_metadata,
 )
 from music.rule_parser import Action, Matcher
 
@@ -155,7 +156,7 @@ def test_remove_release_cover_art(config: Config) -> None:
         assert not cursor.fetchone()["cover_image_path"]
 
 
-def test_edit_release(monkeypatch: Any, config: Config, source_dir: Path) -> None:
+def test_edit_release(config: Config, source_dir: Path) -> None:
     release_path = source_dir / TEST_RELEASE_1.name
     with connect(config) as conn:
         cursor = conn.execute("SELECT id FROM releases WHERE source_path = ?", (str(release_path),))
@@ -209,9 +210,7 @@ def test_edit_release(monkeypatch: Any, config: Config, source_dir: Path) -> Non
             {{ name = "JISOO", role = "main" }},
         ]
     """
-    monkeypatch.setattr("music.collages.click.edit", lambda *_, **__: new_toml)
-
-    edit_release(config, release_id)
+    upsert_release_metadata(config, release_id, new_toml)
     release = get_release(config, release_id)
     assert release is not None
     assert release == Release(
@@ -276,7 +275,43 @@ def test_edit_release(monkeypatch: Any, config: Config, source_dir: Path) -> Non
     ]
 
 
-def test_edit_release_failure_and_resume(monkeypatch: Any, config: Config, source_dir: Path) -> None:
+def test_edit_release_modified_during_edit(config: Config, source_dir: Path) -> None:
+    release_path = source_dir / TEST_RELEASE_1.name
+    with connect(config) as conn:
+        cursor = conn.execute("SELECT id FROM releases WHERE source_path = ?", (str(release_path),))
+        release_id = cursor.fetchone()["id"]
+
+    original = serialize_release_metadata(config, release_id)
+    assert 'title = "I Love Blackpink"' in original
+    # The release is rated while the edit is in progress. The edit fails instead of undoing it.
+    set_release_rating(config, release_id, 5)
+    with pytest.raises(ReleaseEditFailedError, match="modified while it was being edited"):
+        upsert_release_metadata(
+            config,
+            release_id,
+            original.replace('title = "I Love Blackpink"', 'title = "Edited"'),
+            original_toml=original,
+        )
+    release = get_release(config, release_id)
+    assert release is not None
+    assert release.rating == 5
+    assert release.releasetitle == "I Love Blackpink"
+
+    # Without a concurrent change, the same edit applies.
+    original = serialize_release_metadata(config, release_id)
+    upsert_release_metadata(
+        config,
+        release_id,
+        original.replace('title = "I Love Blackpink"', 'title = "Edited"'),
+        original_toml=original,
+    )
+    release = get_release(config, release_id)
+    assert release is not None
+    assert release.rating == 5
+    assert release.releasetitle == "Edited"
+
+
+def test_edit_release_failure_and_resume(config: Config, source_dir: Path) -> None:
     release_path = source_dir / TEST_RELEASE_1.name
     with connect(config) as conn:
         cursor = conn.execute("SELECT id FROM releases WHERE source_path = ?", (str(release_path),))
@@ -326,10 +361,8 @@ def test_edit_release_failure_and_resume(monkeypatch: Any, config: Config, sourc
             {{ name = "JISOO", role = "main" }},
         ]
     """
-    monkeypatch.setattr("music.collages.click.edit", lambda *_, **__: bad_toml)
-
     with pytest.raises(ReleaseEditFailedError) as exc:
-        edit_release(config, release_id)
+        upsert_release_metadata(config, release_id, bad_toml)
     errmsg = str(exc.value)
     match = re.search(r"--resume ([^ ]+)", errmsg)
     assert match is not None
@@ -376,12 +409,19 @@ def test_edit_release_failure_and_resume(monkeypatch: Any, config: Config, sourc
         ]
     """
 
-    def editfn(text: str, **_: Any) -> str:
-        assert text == bad_toml
-        return correct_toml
+    # An edit that lacks one of the release's tracks fails before any tag is written.
+    partial_toml = correct_toml[: correct_toml.index(f"[tracks.{track_ids[1]}]")]
+    with pytest.raises(ReleaseEditFailedError):
+        upsert_release_metadata(config, release_id, partial_toml)
+    release = get_release(config, release_id)
+    assert release is not None
+    assert [t.tracktitle for t in get_tracks_of_release(config, release)] == ["Track 1", "Track 2"]
+    assert AudioTags.from_file(release_path / "01.m4a").releasetitle == "I Love Blackpink"
 
-    monkeypatch.setattr("music.collages.click.edit", editfn)
-    edit_release(config, release_id, resume_file=resume_file)
+    # Reattempt the first failed edit.
+    resume_file.write_text(bad_toml)
+    assert serialize_release_metadata(config, release_id, resume_file=resume_file) == bad_toml
+    upsert_release_metadata(config, release_id, correct_toml, resume_file=resume_file)
 
     # Assert the file got deleted.
     assert not resume_file.exists()

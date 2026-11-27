@@ -1,15 +1,18 @@
 import tomllib
 from pathlib import Path
-from typing import Any
+
+import pytest
 
 from music.cache import connect, update_cache
 from music.collages import (
+    CollageModifiedDuringEditError,
     add_release_to_collage,
     create_collage,
     delete_collage,
-    edit_collage_in_editor,
     remove_release_from_collage,
     rename_collage,
+    serialize_collage,
+    upsert_collage,
 )
 from music.config import Config
 
@@ -105,10 +108,10 @@ def test_rename_collage(config: Config, source_dir: Path) -> None:
         assert not cursor.fetchone()[0]
 
 
-def test_edit_collages_ordering(monkeypatch: Any, config: Config, source_dir: Path) -> None:
+def test_edit_collages_ordering(config: Config, source_dir: Path) -> None:
     filepath = source_dir / "!collages" / "Rose Gold.toml"
-    monkeypatch.setattr("music.collages.click.edit", lambda x: "\n".join(reversed(x.split("\n"))))
-    edit_collage_in_editor(config, "Rose Gold")
+    original = serialize_collage(config, "Rose Gold")
+    upsert_collage(config, "Rose Gold", "\n".join(reversed(original.split("\n"))))
 
     with filepath.open("rb") as fp:
         data = tomllib.load(fp)
@@ -116,10 +119,22 @@ def test_edit_collages_ordering(monkeypatch: Any, config: Config, source_dir: Pa
     assert data["releases"][1]["uuid"] == "ilovecarly"
 
 
-def test_edit_collages_remove_release(monkeypatch: Any, config: Config, source_dir: Path) -> None:
+def test_edit_collages_modified_during_edit(config: Config, source_dir: Path) -> None:
     filepath = source_dir / "!collages" / "Rose Gold.toml"
-    monkeypatch.setattr("music.collages.click.edit", lambda x: x.split("\n")[0])
-    edit_collage_in_editor(config, "Rose Gold")
+    original = serialize_collage(config, "Rose Gold")
+    # A release is removed from the collage while the edit is in progress.
+    remove_release_from_collage(config, "Rose Gold", "ilovecarly")
+    with pytest.raises(CollageModifiedDuringEditError):
+        upsert_collage(config, "Rose Gold", original.split("\n")[1], original_descriptions=original)
+    with filepath.open("rb") as fp:
+        data = tomllib.load(fp)
+    assert [r["uuid"] for r in data["releases"]] == ["ilovenewjeans"]
+
+
+def test_edit_collages_remove_release(config: Config, source_dir: Path) -> None:
+    filepath = source_dir / "!collages" / "Rose Gold.toml"
+    original = serialize_collage(config, "Rose Gold")
+    upsert_collage(config, "Rose Gold", original.split("\n")[0])
 
     with filepath.open("rb") as fp:
         data = tomllib.load(fp)

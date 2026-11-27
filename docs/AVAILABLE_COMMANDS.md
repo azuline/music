@@ -21,7 +21,8 @@ resource they effect. Most commands are of the structure `music {resource} {acti
   - `releases print`: Print a single release's metadata in JSON.
   - `releases print-all`: Print all releases' metadata in JSON, with an optional matcher rule to
     filter out releases.
-  - `releases edit`: Edit a release's metadata as a text file in your `$EDITOR`.
+  - `releases edit`: Edit a release's metadata as a text file in your `$EDITOR`, or
+    non-interactively with `--print` and `--apply`.
   - `releases toggle-new`: Toggle the "new"-ness of a release.
   - `releases toggle-favorite`: Toggle the "favorite" status of a release.
   - `releases set-rating`: Set a release's rating (1-100), or clear it with `--clear`.
@@ -42,7 +43,7 @@ resource they effect. Most commands are of the structure `music {resource} {acti
   - `collages print-all`: Print all collages' metadata in JSON.
   - `collages create`: Create a new collage.
   - `collages edit`: Edit the releases in a collage as a text file. Supports reordering and removing
-    releases.
+    releases. `--print` and `--apply` skip `$EDITOR`.
   - `collages delete`: Delete a collage. The collage's release list is moved to the trash bin.
   - `collages rename`: Rename a collage.
   - `collages add-release`: Add a release to a collage.
@@ -52,7 +53,7 @@ resource they effect. Most commands are of the structure `music {resource} {acti
   - `playlists print-all`: Print all playlists' metadata in JSON.
   - `playlists create`: Create a new playlist.
   - `playlists edit`: Edit the tracks in a playlist as a text file. Supports reordering and removing
-    tracks.
+    tracks. `--print` and `--apply` skip `$EDITOR`.
   - `playlists delete`: Delete a playlist. The playlist's track list is moved to the trash bin.
   - `playlists rename`: Rename a playlist.
   - `playlists add-track`: Add a track to a playlist.

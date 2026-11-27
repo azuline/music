@@ -137,6 +137,27 @@ The `--resume/-r` flag reopens the saved file in your `$EDITOR` instead of the r
 metadata, so that you can fix the mistake and try again. The resume file must belong to the release
 being edited, and it is deleted once the edit succeeds.
 
+If the release is changed by another command while the editor is open (for example, its rating is
+set), the edit fails in the same way instead of undoing that change. Resume the edit to submit it
+anyway.
+
+## Without an Editor
+
+For scripts and agent harnesses that cannot drive an interactive `$EDITOR`, the same edit can be
+done in two steps. `--print` writes the release's TOML to stdout, and `--apply` submits an edited
+TOML from a file (or from stdin with `-`).
+
+```bash
+$ music releases edit --print "018b4ff1-acdf-7ff1-bcd6-67757aea0fed" > release.toml
+# Modify release.toml, and then:
+$ music releases edit --apply release.toml "018b4ff1-acdf-7ff1-bcd6-67757aea0fed"
+```
+
+An `--apply` is submitted as is: the release becomes what the TOML says, even if the release was
+changed after the `--print`.
+
+The rules engine commands also prompt for confirmation; pass `--yes` to skip the prompt.
+
 # Rules Engine
 
 Music's rule engine allows you to update metadata in bulk across your library.
