@@ -1216,6 +1216,14 @@ def _update_cache_for_releases_executor(
                 args.extend([release_id, *utrks])
             conn.execute(query, args)
         if upd_release_args:
+            # A directory that now holds another release's ID (for example, it won a duplicated ID)
+            # is still cached under its former ID. Evict that row: the ON CONFLICT update below
+            # moves the existing row of the ID to this path, which the former row would block.
+            conn.executemany(
+                "DELETE FROM releases WHERE source_path = ? AND id != ?",
+                [(a[1], a[0]) for a in upd_release_args],
+            )
+        if upd_release_args:
             # The OR REPLACE handles source_path conflicts. The ON CONFLICT handles normal updates.
             conn.execute(
                 f"""

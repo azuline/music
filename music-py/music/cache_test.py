@@ -674,6 +674,22 @@ def test_update_cache_releases_duplicate_release_id_holder_changes_id(config: Co
     assert (holder / ".rose.ilovecarly.toml").is_file()
 
 
+def test_update_cache_releases_duplicate_release_id_won_by_cached_directory(config: Config) -> None:
+    """Test that a directory cached under another release ID can win a duplicated release ID."""
+    winner = config.music_source_dir / "a"
+    loser = config.music_source_dir / "b"
+    shutil.copytree(TEST_RELEASE_3, winner)
+    shutil.copytree(TEST_RELEASE_2, loser)
+    (winner / ".rose.0000.toml").write_text('new = false\nadded_at = "2020-01-01T00:00:00+00:00"\n')
+    update_cache(config)
+    assert _release_rows(config) == [("0000", str(winner)), ("ilovecarly", str(loser))]
+
+    # The first directory's datafile is replaced with one that has the second directory's ID.
+    (winner / ".rose.0000.toml").rename(winner / ".rose.ilovecarly.toml")
+    update_cache(config)
+    assert _release_rows(config) == [("ilovecarly", str(winner))]
+
+
 def test_update_cache_releases_duplicate_track_id_holder_changes_id(config: Config) -> None:
     """Test that a file that no longer has a track ID does not keep other files off of it."""
     release_dir = config.music_source_dir / TEST_RELEASE_1.name
