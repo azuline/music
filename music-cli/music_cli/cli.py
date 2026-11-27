@@ -688,8 +688,8 @@ def parse_release_argument(r: str, *, c: Config | None = None) -> str:
     """
     Takes in a release argument and normalizes it to the release ID.
 
-    If a config is passed, a path in the source directory must be the path of the release in the
-    cache. When multiple directories have the same release ID, only one of them is the release, and
+    If a config is passed, a path outside of the virtual filesystem must be the path of the release
+    in the cache. When multiple directories have the same release ID, only one of them is the release, and
     acting on the release by the path of an ignored one would affect a different directory.
     """
     if valid_uuid(r):
@@ -702,13 +702,14 @@ def parse_release_argument(r: str, *, c: Config | None = None) -> str:
         for f in sorted(p.iterdir()):
             if m := STORED_DATA_FILE_REGEX.match(f.name):
                 logger.debug(f"Parsed release ID {m[1]} from release argument {r}")
-                if c is not None and p.is_relative_to(c.music_source_dir.resolve()):
+                # Paths in the virtual filesystem are views of the release, not its directory.
+                if c is not None and not Path(os.path.abspath(r)).is_relative_to(c.vfs.mount_dir):
                     release = get_release(c, m[1])
                     if release is not None and release.source_path.resolve() != p:
                         raise DuplicateReleaseArgError(
-                            f"{r} is an ignored duplicate of the release at {release.source_path}: "
-                            f"both have the release ID {m[1]}. Pass the other path, or remove one of "
-                            "the two directories from the source directory."
+                            f"{r} is a duplicate of the release at {release.source_path}: both have "
+                            f"the release ID {m[1]}, and Music ignores this one. Pass the other "
+                            "path, or remove one of the two directories."
                         )
                 return m[1]
     raise InvalidReleaseArgError(

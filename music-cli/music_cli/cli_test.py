@@ -71,6 +71,15 @@ def test_parse_release_from_ignored_duplicate_path(config: Config, source_dir: P
     assert duplicate.is_dir()
     assert get_release(config, release_id) == release
 
+    # As does a symlink in the source directory to a duplicate that lives outside of it.
+    outside = config.music_source_dir.parent / "zoutside"
+    shutil.copytree(retained, outside)
+    (source_dir / "Test Release 1 link").symlink_to(outside)
+    update_cache(config)
+    with pytest.raises(DuplicateReleaseArgError):
+        parse_release_argument(str(source_dir / "Test Release 1 link"), c=config)
+    assert get_release(config, release_id) == release
+
     # The retained path and the release ID still work.
     assert parse_release_argument(release_id, c=config) == release_id
     res = CliRunner().invoke(releases, ["delete", str(retained)], obj=Context(config=config))
