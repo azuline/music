@@ -18,7 +18,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 
-from music import Config, MusicError, Release, list_releases
+from music import Config, MusicError, Release, list_releases, maybe_invalidate_cache_database
 from music.genre_hierarchy import TRANSITIVE_PARENT_GENRES
 
 FIELDS = ["genre", "secondary genre", "descriptor"]
@@ -80,7 +80,7 @@ def read_rym_descriptors(*, path: Path = RYM_FILE) -> list[str]:
     """
     descriptors: set[str] = set()
     in_section = False
-    with path.open("r") as fp:
+    with path.open("r", encoding="utf-8") as fp:
         for line in fp.read().splitlines():
             if not line.startswith(" "):
                 in_section = line == RYM_DESCRIPTORS_SECTION
@@ -97,6 +97,9 @@ def main() -> int:
     args = parser.parse_args()
 
     config = Config.parse(config_path_override=args.config)
+    # Like the CLI, drop a cache that was built from a different configuration (for example, another
+    # library sharing the cache directory) instead of reporting on its releases.
+    maybe_invalidate_cache_database(config)
     known_genres = list(TRANSITIVE_PARENT_GENRES)
     known_descriptors = read_rym_descriptors()
 
