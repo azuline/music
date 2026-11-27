@@ -1144,6 +1144,11 @@ def _actions_may_change_cached_track(actions: list[Action], t: Track) -> bool:
         for field in act.tags:
             if not trustworthy(field):
                 return True
+            # These live in the release's datafile, which the tracks of a release share. A copy
+            # writes each track's own value into it and the last track wins, so dropping a track
+            # can change the outcome.
+            if copy_source is not None and field in ("new", "favorite", "rating"):
+                return True
             old = values[field]
             new: str | list[str]
             if isinstance(old, list):

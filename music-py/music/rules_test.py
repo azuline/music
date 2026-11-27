@@ -591,6 +591,8 @@ def test_filter_track_noops_with_read_cache_keeps_undeterminable(config: Config,
     # Invalid values are kept so that the executor raises on them.
     assert _noop_filter(config, source_dir, "label:Cool", ["new/replace:lalala"]) == all_tracks
     assert _noop_filter(config, source_dir, "label:Cool", ["rating/replace:lalala"]) == all_tracks
+    # The tracks of a release share its datafile, so a copy into it depends on every track.
+    assert _noop_filter(config, source_dir, "label:Cool", ["new/copy:new"]) == all_tracks
     # A missing title is cached as a default value.
     af = AudioTags.from_file(source_dir / "Test Release 1" / "01.m4a")
     af.tracktitle = None
