@@ -29,6 +29,8 @@ resource they effect. Most commands are of the structure `music {resource} {acti
   - `releases set-cover`: Set the cover art for a release. Replaces any existing cover art.
   - `releases delete-cover`: Remove the cover art of a release.
   - `releases run-rule`: Run one or more metadata actions on all tracks in the release.
+  - `releases reflush`: Rewrite the tags of a release (or all releases) and rename its source
+    directory and files per the source path templates.
   - `releases create-single`: Create a "phony" single release from a track and copy the track into
     the new release. `--loose-track` creates a loose track instead of a single, and
     `--update-references` repoints playlists at the new track.

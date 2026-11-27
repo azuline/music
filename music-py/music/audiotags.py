@@ -349,8 +349,10 @@ class AudioTags:
             _write_standard_tag("TDRC", str(self.releasedate))
             _write_standard_tag("TDOR", str(self.originaldate))
             _write_tag_with_description("TXXX:COMPOSITIONDATE", str(self.compositiondate))
-            _write_standard_tag("TRCK", self.tracknumber)
-            _write_standard_tag("TPOS", self.discnumber)
+            # ID3 stores the totals in the same frames as the numbers. Like for MP4, we preserve the
+            # previous tracktotal/disctotal, as Music does not care about those values.
+            _write_standard_tag("TRCK", _with_previous_total(self.tracknumber, _get_tag(m.tags, ["TRCK"])))
+            _write_standard_tag("TPOS", _with_previous_total(self.discnumber, _get_tag(m.tags, ["TPOS"])))
             _write_standard_tag("TALB", self.releasetitle)
             _write_standard_tag("TCON", _format_genre_tag(c, self.genre))
             _write_tag_with_description("TXXX:SECONDARYGENRE", _format_genre_tag(c, self.secondarygenre))
@@ -472,6 +474,13 @@ class AudioTags:
             return
 
         raise MusicError(f"Impossible: unknown mutagen type: {type(m)=} ({repr(m)=})")
+
+
+def _with_previous_total(number: str | None, previous: str | None) -> str | None:
+    """Carry the `/total` suffix of an ID3 track or disc number frame over to a new number."""
+    if not number or "/" in number or not previous or "/" not in previous:
+        return number
+    return f"{number}/{previous.split('/', 1)[1]}"
 
 
 def _split_tag(t: str | None) -> list[str]:
