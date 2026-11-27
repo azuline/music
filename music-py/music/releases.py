@@ -439,6 +439,9 @@ def upsert_release_metadata(
                 release_meta = MetadataRelease.from_toml(toml)
             except (tomllib.TOMLDecodeError, KeyError) as e:
                 raise ReleaseEditFailedError("Failed to decode TOML file.") from e
+            # Check every track up front so that a mismatched edit fails before any tag is written.
+            if missing := [t.id for t in tracks if t.id not in release_meta.tracks]:
+                raise ReleaseEditFailedError(f"Edit is missing tracks of this release: {', '.join(missing)}")
             for t in tracks:
                 track_meta = release_meta.tracks[t.id]
                 tags = AudioTags.from_file(t.source_path)
