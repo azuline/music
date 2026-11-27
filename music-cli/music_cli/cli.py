@@ -333,7 +333,15 @@ def edit_release_cmd(
     if original_toml == toml and not resume:
         logger.info("Aborting manual release edit: no metadata change detected.")
         return
-    upsert_release_metadata(ctx.config, release, toml, resume_file=resume)
+    upsert_release_metadata(
+        ctx.config,
+        release,
+        toml,
+        resume_file=resume,
+        # An edit in $EDITOR must not undo the changes made while the editor was open. An --apply or
+        # a resumed edit is submitted as is: the caller decides what the release becomes.
+        original_toml=original_toml if apply_from is None and not resume else None,
+    )
 
 
 @releases.command()
@@ -551,15 +559,21 @@ def edit(ctx: Context, collage: str, print_only: bool, apply_from: TextIO | None
     submits the edited lines from a file or stdin.
     """
     collage = parse_collage_argument(collage)
-    edited_descriptions = _edit_text(
-        serialize_collage(ctx.config, collage), print_only=print_only, apply_from=apply_from
-    )
+    original_descriptions = serialize_collage(ctx.config, collage)
+    edited_descriptions = _edit_text(original_descriptions, print_only=print_only, apply_from=apply_from)
     if print_only:
         return
     if edited_descriptions is None:
         logger.info("Aborting: metadata file not submitted.")
         return
-    upsert_collage(ctx.config, collage, edited_descriptions)
+    upsert_collage(
+        ctx.config,
+        collage,
+        edited_descriptions,
+        # An edit in $EDITOR must not undo the changes made while the editor was open. An --apply
+        # is submitted as is: the caller decides what the collage becomes.
+        original_descriptions=original_descriptions if apply_from is None else None,
+    )
 
 
 @collages.command(name="print")
@@ -646,15 +660,21 @@ def edit_playlist(ctx: Context, playlist: str, print_only: bool, apply_from: Tex
     submits the edited lines from a file or stdin.
     """
     playlist = parse_playlist_argument(playlist)
-    edited_descriptions = _edit_text(
-        serialize_playlist(ctx.config, playlist), print_only=print_only, apply_from=apply_from
-    )
+    original_descriptions = serialize_playlist(ctx.config, playlist)
+    edited_descriptions = _edit_text(original_descriptions, print_only=print_only, apply_from=apply_from)
     if print_only:
         return
     if edited_descriptions is None:
         logger.info("Aborting: metadata file not submitted.")
         return
-    upsert_playlist(ctx.config, playlist, edited_descriptions)
+    upsert_playlist(
+        ctx.config,
+        playlist,
+        edited_descriptions,
+        # An edit in $EDITOR must not undo the changes made while the editor was open. An --apply
+        # is submitted as is: the caller decides what the playlist becomes.
+        original_descriptions=original_descriptions if apply_from is None else None,
+    )
 
 
 @playlists.command(name="print")

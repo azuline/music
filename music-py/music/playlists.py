@@ -31,6 +31,10 @@ from music.tracks import TrackDoesNotExistError
 logger = logging.getLogger(__name__)
 
 
+class PlaylistModifiedDuringEditError(MusicExpectedError):
+    pass
+
+
 class PlaylistDoesNotExistError(MusicExpectedError):
     pass
 
@@ -176,7 +180,16 @@ def serialize_playlist(c: Config, playlist_name: str) -> str:
     return "\n".join(lines)
 
 
-def upsert_playlist(c: Config, playlist_name: str, edited_descriptions: str) -> None:
+def upsert_playlist(
+    c: Config,
+    playlist_name: str,
+    edited_descriptions: str,
+    *,
+    # The descriptions that the edit started from (see `serialize_playlist`). If provided, the edit
+    # fails when the playlist no longer serializes to them, instead of undoing the changes that were
+    # made to the playlist while it was being edited.
+    original_descriptions: str | None = None,
+) -> None:
     """
     Apply an edited newline-delimited string of track descriptions (see `serialize_playlist`) to a
     playlist, reordering/removing tracks to match.
@@ -187,7 +200,11 @@ def upsert_playlist(c: Config, playlist_name: str, edited_descriptions: str) -> 
     with lock(c, playlist_lock_name(playlist_name), timeout=60.0):
         with path.open("rb") as fp:
             data = tomllib.load(fp)
-        _, uuid_mapping = _playlist_line_mapping(data.get("tracks", []))
+        lines, uuid_mapping = _playlist_line_mapping(data.get("tracks", []))
+        if original_descriptions is not None and original_descriptions != "\n".join(lines):
+            raise PlaylistModifiedDuringEditError(
+                f"Playlist {playlist_name} was modified while it was being edited. Please redo the edit."
+            )
 
         edited_tracks: list[dict[str, Any]] = []
         for desc in edited_descriptions.strip().split("\n"):

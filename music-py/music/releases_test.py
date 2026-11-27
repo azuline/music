@@ -26,6 +26,7 @@ from music.releases import (
     run_actions_on_release,
     serialize_release_metadata,
     set_release_cover_art,
+    set_release_rating,
     toggle_release_favorite,
     toggle_release_new,
     upsert_release_metadata,
@@ -272,6 +273,42 @@ def test_edit_release(config: Config, source_dir: Path) -> None:
             release=release,
         ),
     ]
+
+
+def test_edit_release_modified_during_edit(config: Config, source_dir: Path) -> None:
+    release_path = source_dir / TEST_RELEASE_1.name
+    with connect(config) as conn:
+        cursor = conn.execute("SELECT id FROM releases WHERE source_path = ?", (str(release_path),))
+        release_id = cursor.fetchone()["id"]
+
+    original = serialize_release_metadata(config, release_id)
+    assert 'title = "I Love Blackpink"' in original
+    # The release is rated while the edit is in progress. The edit fails instead of undoing it.
+    set_release_rating(config, release_id, 5)
+    with pytest.raises(ReleaseEditFailedError, match="modified while it was being edited"):
+        upsert_release_metadata(
+            config,
+            release_id,
+            original.replace('title = "I Love Blackpink"', 'title = "Edited"'),
+            original_toml=original,
+        )
+    release = get_release(config, release_id)
+    assert release is not None
+    assert release.rating == 5
+    assert release.releasetitle == "I Love Blackpink"
+
+    # Without a concurrent change, the same edit applies.
+    original = serialize_release_metadata(config, release_id)
+    upsert_release_metadata(
+        config,
+        release_id,
+        original.replace('title = "I Love Blackpink"', 'title = "Edited"'),
+        original_toml=original,
+    )
+    release = get_release(config, release_id)
+    assert release is not None
+    assert release.rating == 5
+    assert release.releasetitle == "Edited"
 
 
 def test_edit_release_failure_and_resume(config: Config, source_dir: Path) -> None:
